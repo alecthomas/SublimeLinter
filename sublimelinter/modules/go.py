@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# encoding: utf-8
 # golang.py - sublimelint package for checking golang files
 
 import glob
@@ -29,7 +29,10 @@ class Linter(BaseLinter):
         self.filename = filename
         dir = os.path.dirname(filename)
         pkg_path = self.pkg_path.format(**self.env)
-        files = glob.glob(dir + '/*.go')
+        # Find files in the current files package. Allows for split-package directories.
+        file_package = self._package_for_file(filename)
+        files = [file for file in glob.glob(dir + '/*.go')
+                 if self._package_for_file(file) == file_package]
         cmd = ['tool', '6g', '-o', '/dev/null', '-D', dir, '-I', pkg_path] + files
         print ' '.join(cmd)
         return cmd
@@ -53,3 +56,9 @@ class Linter(BaseLinter):
             env[k] = v[1:-1].decode('string_escape')
         print env
         return env
+
+    def _package_for_file(self, filename):
+        with open(filename) as fd:
+            for line in fd:
+                if line.startswith('package'):
+                    return line.split()[1]
