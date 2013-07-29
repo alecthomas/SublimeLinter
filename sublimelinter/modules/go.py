@@ -24,7 +24,7 @@ def run(command):
     return out.splitlines()
 
 
-def parse_lines(filename, pattern, lines):
+def parse_lines(view, filename, pattern, lines):
     for line in lines:
         match = pattern.match(line)
         if match is not None and match.group(1).endswith(filename):
@@ -41,18 +41,23 @@ class Linter(BaseLinter):
         self._linters = [self.golint_check, self.go_6g_check]
         self._env = self._go_env('go')
 
-    def golint_check(self, filename):
+    def golint_check(self, view, filename):
         errors = []
         lines = run(['golint', filename])
-        for match in parse_lines(filename, self.golint_pattern, lines):
+        for match in parse_lines(view, filename, self.golint_pattern, lines):
             _, line_number, position, message = match.groups()
-            errors.append(GoError(line=int(line_number), position=int(position), type='warning', message=message))
+            line_number = int(line_number)
+            line_point = view.text_point(line_number - 1, 0)
+            line_text = view.substr(view.line(line_point))
+            if '-golint' in line_text:
+                continue
+            errors.append(GoError(line=line_number, position=int(position), type='warning', message=message))
         return errors
 
-    def go_6g_check(self, filename):
+    def go_6g_check(self, view, filename):
         errors = []
         lines = run(self._get_go_6g_args(filename))
-        for match in parse_lines(filename, self.go_6g_pattern, lines):
+        for match in parse_lines(view, filename, self.go_6g_pattern, lines):
             _, line_number, message = match.groups()
             errors.append(GoError(line=int(line_number), position=None, type='error', message=message))
         return errors
@@ -72,7 +77,7 @@ class Linter(BaseLinter):
         errors = []
         for linter in self._linters:
             try:
-                errors.extend(linter(filename))
+                errors.extend(linter(view, filename))
             except Exception as e:
                 print 'GoLinter: error: %s' % e
         return errors
