@@ -20,9 +20,10 @@ GoError = namedtuple('GoError', 'line position type message')
 
 
 def run(command):
-    p = subprocess.Popen(command, stdout=subprocess.PIPE)
-    out, _ = p.communicate()
-    return out.splitlines()
+    print 'Go linter running', ' '.join(command)
+    p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = p.communicate()
+    return out.splitlines() + err.splitlines()
 
 
 def parse_lines(view, filename, pattern, lines):
@@ -50,7 +51,12 @@ class BaseGoLinter(object):
 
     def apply(self, view, filename, line):
         match = self.pattern.match(line)
-        if match is None or not filename.endswith(match.group('filename')):
+        if match is None:
+            return None
+        # "go vet" returns a relative path which fails to match, and this
+        # doesn't hurt the other implementations
+        match_filename = os.path.abspath(match.group('filename'))
+        if filename != match_filename:
             return None
 
         groups = match.groupdict()
@@ -80,7 +86,6 @@ class GoCompileLinter(BaseGoLinter):
         files = [file for file in glob.glob(dir + '/*.go')
                  if self._package_for_file(file) == file_package]
         cmd = [self.binary, 'tool', '6g', '-o', '/dev/null', '-D', dir, '-I', pkg_path] + files
-        print ' '.join(cmd)
         return cmd
 
     def _package_for_file(self, filename):
@@ -116,8 +121,16 @@ class GolintLinter(BaseGoLinter):
         return error
 
 
+class GoVetLinter(BaseGoLinter):
+    binary = 'go'
+    pattern = re.compile(r'(?P<filename>.*?):(?P<line_number>\d+): (?P<message>.*)')
+
+    def run(self, view, filename):
+        return run([self.binary, 'vet', filename])
+
+
 class Linter(BaseLinter):
-    linters = [GoCompileLinter, GolintLinter]
+    linters = [GoCompileLinter, GolintLinter, GoVetLinter]
 
     def __init__(self, config):
         super(Linter, self).__init__(config)
@@ -146,5 +159,5 @@ class Linter(BaseLinter):
                 underlines = warningUnderlines
                 messages = warningMessages
             if error.position is not None:
-                self.underline_word(view, error.line, error.position - 1, underlines)
+                self.underline_range(view, error.line, error.position - 1, underlines)
             self.add_message(error.line, lines, error.message, messages)
