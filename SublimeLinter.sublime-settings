@@ -140,6 +140,11 @@
         110  // line too long
     ],
 
+    // Options for linting Go source.
+    "golint_options":
+    {
+    },
+
     // CSSLint options:
     // Each rule can have three values: error|warning|true|false
     // false => rule is disabled.

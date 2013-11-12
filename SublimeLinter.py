@@ -53,6 +53,7 @@ ALL_SETTINGS = [
     'csslint_options',
     'gjslint_ignore',
     'gjslint_options',
+    'golint_options',
     'javascript_linter',
     'jshint_options',
     'jslint_options',

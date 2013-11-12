@@ -34,6 +34,7 @@ def parse_lines(view, filename, pattern, lines):
 
 
 class BaseGoLinter(object):
+    name = None
     binary = None
     pattern = None
     type = 'error'
@@ -45,8 +46,6 @@ class BaseGoLinter(object):
     @classmethod
     def valid(cls):
         cls.binary = find_executable(cls.binary)
-        if cls.binary is not None:
-            print 'GoLinter: %s enabled' % cls.__name__
         return cls.binary is not None
 
     def apply(self, view, filename, line):
@@ -68,6 +67,7 @@ class BaseGoLinter(object):
 
 
 class GoCompileLinter(BaseGoLinter):
+    name = 'go'
     binary = 'go'
     pattern = re.compile(r'(?P<filename>.*?):(?P<line_number>\d+): (?P<message>.*)')
     pkg_path = '{GOPATH}/pkg/{GOOS}_{GOARCH}'
@@ -103,6 +103,7 @@ class GoCompileLinter(BaseGoLinter):
 
 
 class GolintLinter(BaseGoLinter):
+    name = 'golint'
     binary = 'golint'
     pattern = re.compile(r'(?P<filename>.*?):(?P<line_number>\d+):(?P<position>\d+): (?P<message>.*)')
     type = 'warning'
@@ -111,7 +112,7 @@ class GolintLinter(BaseGoLinter):
         return run([self.binary, filename])
 
     def apply(self, view, filename, line):
-        error = super(GolintLinter, self).apply(view, filename, line)
+        error = BaseGoLinter.apply(self, view, filename, line)
 
         line_point = view.text_point(error.line - 1, 0)
         line_text = view.substr(view.line(line_point))
@@ -122,21 +123,33 @@ class GolintLinter(BaseGoLinter):
 
 
 class GoVetLinter(BaseGoLinter):
+    name = 'go vet'
     binary = 'go'
     pattern = re.compile(r'(?P<filename>.*?):(?P<line_number>\d+): (?P<message>.*)')
+    type = 'warning'
 
     def run(self, view, filename):
-        return run([self.binary, 'vet', filename])
+        out = run([self.binary, 'vet', filename])
+        return [l for l in out if 'possible formatting directive in Error call' not in l]
 
 
 class Linter(BaseLinter):
-    linters = [GoCompileLinter, GolintLinter, GoVetLinter]
-
-    def __init__(self, config):
-        super(Linter, self).__init__(config)
-        self.linters = [linter() for linter in Linter.linters if linter.valid()]
+    LINTERS = [GoCompileLinter, GolintLinter, GoVetLinter]
+    linters = []
 
     def built_in_check(self, view, code, filename):
+        if not self.linters:
+            config = view.settings()
+            disabled = config.get('golint_options', {}).get('disabled', [])
+            print disabled
+            self.linters = []
+            for linter in self.LINTERS:
+                if linter.valid() and linter.__name__ not in disabled:
+                    print 'GoLinter: %s enabled' % linter.__name__
+                    self.linters.append(linter())
+                else:
+                    print 'GoLinter: %s disabled' % linter.__name__
+
         errors = []
         for linter in self.linters:
             try:
